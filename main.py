@@ -3,7 +3,7 @@ from tkinter import ttk, filedialog
 from PIL import Image, ImageTk, ImageDraw
 import numpy as np
 import models
-from models import ModelPredict
+from logic import ModelPredict
 
 class ImageEditorApp:
     def __init__(self, root):
