@@ -4,12 +4,19 @@ from PIL import Image, ImageTk, ImageDraw
 import numpy as np
 import models
 from logic import ModelPredict
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Model, load_model
+
+from skimage.io import imsave
+
 
 class ImageEditorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Segmentation DEMO")
 
+        # vars
         self.image_path = None
         self.edited_image = None
         self.mask_image = None
@@ -17,6 +24,12 @@ class ImageEditorApp:
         self.painting = False
         self.erasing = False
         self.last_x, self.last_y = None, None
+
+        # load mode here so it is in memory:
+        self.model_path = "models/dcunet_aug1_k2_TF_poprawione_k5.h5"
+        self.model = tf.keras.models.load_model(self.model_path)
+        self.model.summary()
+        self.model.compile()
 
         # Create UI elements
         self.create_widgets()
@@ -27,10 +40,13 @@ class ImageEditorApp:
         self.btn_load_image.grid(row=0, column=0, pady=10)
 
         # Canvas to display the loaded image
-        self.canvas_image = tk.Canvas(self.root, bg="white", width=512, height=512)
-        self.canvas_image.grid(row=1, column=0, padx=10)
+        self.label_image= tk.Label(text="Loaded image")
+        self.label_image.grid(row=1, column=0, padx=10)
 
-        # Buttons for editing
+        self.canvas_image = tk.Canvas(self.root, bg="white", width=512, height=512)
+        self.canvas_image.grid(row=2, column=0, padx=10)
+
+        # Buttons for editing mask
         self.btn_frame = ttk.Frame(self.root, padding=10)
         self.btn_frame.grid(row=0, column=1)
 
@@ -40,20 +56,31 @@ class ImageEditorApp:
         self.btn_eraser = ttk.Button(self.btn_frame, text="ERASER", command=self.enable_eraser)
         self.btn_eraser.grid(row=0, column=1, pady=5, padx=15)
 
+        # Canvas for painting and erasing
+        self.label_image= tk.Label(text="Paint mask")
+        self.label_image.grid(row=1, column=1, padx=10)
+
+        self.canvas_paint = tk.Canvas(self.root, bg="black", width=512, height=512)
+        self.canvas_paint.grid(row=2, column=1, padx=10)
+
+        # segment with ai
         self.btn_use_ai = ttk.Button(self.btn_frame, text="USE AI", command=self.use_ai)
         self.btn_use_ai.grid(row=0, column=2, pady=5, padx=15)
 
-        # Canvas for painting and erasing
-        self.canvas_paint = tk.Canvas(self.root, bg="black", width=512, height=512)
-        self.canvas_paint.grid(row=1, column=1, padx=10)
+        self.label_image= tk.Label(text="Mask generated with AI")
+        self.label_image.grid(row=1, column=2, padx=10)
+
+        self.canvas_mask_ai = tk.Canvas(self.root, bg="black", width=512, height=512)
+        self.canvas_mask_ai.grid(row=2, column=2, padx=10)
+
 
         # Button to save mask
         self.btn_save_mask = ttk.Button(self.root, text="Save Mask", command=self.save_mask)
-        self.btn_save_mask.grid(row=2, column=1, pady=10)
+        self.btn_save_mask.grid(row=3, column=1, pady=10)
 
         # Bind mouse events
         self.canvas_paint.bind("<B1-Motion>", self.paint)
-        # self.canvas_paint.bind("<ButtonRelease-1>", self.stop_painting)
+        self.canvas_paint.bind("<ButtonRelease-1>", self.stop_painting)
 
         # Configure column and row weights for resizing
         self.root.columnconfigure(0, weight=1)
@@ -119,25 +146,46 @@ class ImageEditorApp:
             mask_image = Image.fromarray(pixels_array, 'RGBA')
 
             painted_mask = Image.alpha_composite(self.original_image.convert("RGBA"), mask_image)
+
             self.edited_image = ImageTk.PhotoImage(painted_mask)
             self.canvas_image.create_image(0, 0, anchor=tk.NW, image=self.edited_image)
 
+
+
+    def update_displayed_image_with_ai(self):
+        self.mask_image_ai = Image.open("res/tmp.png")
+        self.mask_image_ai = self.mask_image_ai.resize((512, 512))
+        self.mask_ai = ImageTk.PhotoImage(self.mask_image_ai)
+        self.canvas_mask_ai.create_image(0, 0, anchor=tk.NW, image=self.mask_ai)
+
+
+
+
     def stop_painting(self, event):
-        self.painting = False
-        self.erasing = False
+
+        #self.painting = False
+        #self.erasing = False
         self.last_x, self.last_y = None, None
 
     def use_ai(self):
-        # Placeholder for using AI to get mask
-        mp = ModelPredict.ModelPredict()
-        img = np.array(self.original_image.resize([512, 224]))
-        mask = mp.get_model_prediction(img)
+        org = Image.open(self.image_path)
+        size_x = 512
+        size_y = 224
+        img = np.array(org)
+        img.resize(1,size_x,size_y,3)
+        print(img.shape)
 
-        # clear canvas and display mask from model
+        thresh = 0.1
+        predicted = self.model.predict(img, verbose=1)
+        masks = np.zeros((len(predicted), size_x, size_y), dtype=np.uint8)
+        ns = predicted[:, :, :, 2]
+        masks[ns > thresh] = 255
 
+        for n in masks:
+            imsave('res/tmp.png', n)
 
+        self.update_displayed_image_with_ai()
 
-        pass
 
     def save_mask(self):
         if self.mask_image:
@@ -151,5 +199,5 @@ if __name__ == "__main__":
 
     root = tk.Tk()
     app = ImageEditorApp(root)
-    root.geometry("900x700")
+    root.geometry("1500x700")
     root.mainloop()
